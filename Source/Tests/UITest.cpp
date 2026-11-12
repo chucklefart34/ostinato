@@ -6,6 +6,7 @@
 #include "Core/Settings.h"
 #include "Engine/Exporter.h"
 
+#if JUCE_MODAL_LOOPS_PERMITTED   // the test pumps the message loop itself (not available on iOS/Android)
 namespace {
 
 struct Driver {
@@ -137,7 +138,6 @@ struct Driver {
 
 }  // namespace
 
-#if JUCE_MODAL_LOOPS_PERMITTED
 int runUITest(const juce::File& dir) {
     dir.deleteRecursively();
     dir.createDirectory();

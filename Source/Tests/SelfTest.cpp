@@ -14,17 +14,18 @@ struct Suite {
     int passed = 0, failed = 0;
     juce::StringArray lines;
     juce::String section;
-    juce::File progress;   // rewritten at every section so a crash still leaves a trail
     void begin(const juce::String& s) {
         section = s; lines.add(""); lines.add("== " + s); std::printf("\n== %s\n", s.toRawUTF8());
-        if (progress != juce::File()) progress.replaceWithText("(in progress)\n" + lines.joinIntoString("\n") + "\n");
+        if (progress != juce::File()) progress.appendText("\n== " + s + "\n");
     }
+    juce::File progress;   // a crash still leaves a trail of what passed
     bool check(bool ok, const juce::String& what, const juce::String& detail = {}) {
         (ok ? passed : failed)++;
         auto l = juce::String(ok ? "  PASS  " : "  FAIL  ") + what + (detail.isNotEmpty() ? "  [" + detail + "]" : juce::String());
         lines.add(l);
         std::printf("%s\n", l.toRawUTF8());
         std::fflush(stdout);
+        if (progress != juce::File()) progress.appendText(l + "\n");
         return ok;
     }
 };
@@ -178,9 +179,17 @@ float dbRatio(float a, float b) { return dsp::lin2db(std::max(a, 1e-9f)) - dsp::
 
 }  // namespace
 
+static juce::File& crashTrailFile() { static juce::File f; return f; }
+
 int runSelfTests(const juce::File& reportFile) {
     Suite t;
     t.progress = reportFile;
+    if (reportFile != juce::File()) reportFile.replaceWithText("(in progress)\n");
+    juce::SystemStats::setApplicationCrashHandler([](void*) {
+        std::fprintf(stderr, "CRASH\n%s\n", juce::SystemStats::getStackBacktrace().toRawUTF8());
+        crashTrailFile().appendText("\nCRASH\n" + juce::SystemStats::getStackBacktrace() + "\n");
+    });
+    crashTrailFile() = reportFile;
     const auto tmpRoot = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("ostinato-selftest");
     tmpRoot.deleteRecursively();
     tmpRoot.createDirectory();
@@ -605,7 +614,11 @@ int runSelfTests(const juce::File& reportFile) {
         t.check(e32.result.ok, "32-bit float WAV export");
         ExportSettings aac; aac.format = ExportSettings::AAC; aac.destination = tmpRoot.getChildFile("Exports/a.m4a");
         Exporter ea(p, aac); ea.run();
+       #if JUCE_MAC || JUCE_IOS
+        t.check(ea.result.ok, "AAC export with Apple's encoder", ea.result.error);
+       #else
         t.check(!ea.result.ok && ea.result.error.contains("Apple"), "AAC reports clearly that it needs Apple's encoder on this platform");
+       #endif
         Project empty;
         juce::AudioBuffer<float> eb; juce::String err;
         t.check(!Exporter::renderToBuffer(empty, SR, eb, 1.0, err) && err.contains("empty"), "Exporting an empty song gives a clear error");
@@ -1077,56 +1090,65 @@ int runSelfTests(const juce::File& reportFile) {
         session.redo();
         t.check(session.project.tracks.size() == before + 1, "Redo restores it");
         // record 1.0 s of the simulated 220 Hz input on the audio track (count-in off)
-        auto& at = session.project.tracks.back();
-        at.armed = true;
         session.project.countInBars = 0;
-        session.changed(true);
-        engine.rebuild();
-        pump(100);
-        engine.seek(PPQ * 4);
-        juce::String err;
-        const bool started = engine.startRecording(err);
-        pump(1000);
-        engine.stopRecording();
-        pump(100);
-        const Clip* rc = nullptr;
-        for (auto& c : session.project.tracks.back().clips) if (c.type == ClipType::Audio) rc = &c;
-        t.check(started && rc != nullptr, "Recording creates an audio clip", err);
-        if (rc) {
-            auto smp = SampleBank::get().loadNow(rc->audio.file);
-            const double secs = smp ? smp->seconds() : 0.0;
-            t.check(smp && secs > 0.8 && secs < 1.4, "Recorded file holds ~1 s of audio", juce::String(secs, 2) + " s");
-            if (smp) {
-                juce::AudioBuffer<float> chk(2, std::min(smp->frames(), 16384));
-                for (int i = 0; i < chk.getNumSamples(); ++i) { chk.setSample(0, i, smp->buffer.getSample(0, i)); chk.setSample(1, i, smp->buffer.getSample(0, i)); }
-                const double hz = pitchOf(chk, 2048, 8192, smp->sampleRate);
-                t.check(std::fabs(hz - 220.0) < 2.0, "Recorded audio is the input signal (220 Hz)", juce::String(hz, 1) + " Hz");
-            }
-            t.check(rc->start == PPQ * 4, "Clip placed at the punch-in point (bar 2)");
-        }
-        // record again, this time with an input chain printed (designer gain module at -12 dB)
-        {
-            auto& tr = session.project.tracks.back();
-            auto fx = session.project.makeEffect("designer");
-            Catalog::applyValues(*fx.params, "s1_type=13,s1_a=25,s1_b=50,s1_c=50,s2_type=0");
-            tr.inputEffects.push_back(fx);
-            tr.input->set(3, 1.f);
+        // Audio recording needs an input. Machines with a real output device but no input (CI Macs)
+        // cannot feed the simulated signal, so those checks are skipped there, not failed.
+        const bool haveInput = engine.inputEnabled();
+        if (haveInput) {
+            auto& at = session.project.tracks.back();
+            at.armed = true;
             session.changed(true);
             engine.rebuild();
             pump(100);
-            engine.seek(PPQ * 8);
-            const bool s3 = engine.startRecording(err);
-            pump(800);
+            engine.seek(PPQ * 4);
+            juce::String err;
+            const bool started = engine.startRecording(err);
+            pump(1000);
             engine.stopRecording();
             pump(100);
-            const Clip* fc = nullptr;
-            for (auto& c : session.project.tracks.back().clips) if (c.type == ClipType::Audio && c.start == PPQ * 8) fc = &c;
-            auto smp = fc ? SampleBank::get().loadNow(fc->audio.file) : nullptr;
-            const float pk = smp ? smp->buffer.getMagnitude(0, std::min(smp->frames(), 24000)) : 0.f;
-            t.check(s3 && smp && smp->buffer.getNumChannels() == 2 && std::fabs(pk - 0.125f) < 0.03f, "Live recording with effects writes the processed sound (stereo, -12 dB)",
-                    juce::String(pk, 3) + " peak, " + juce::String(smp ? smp->buffer.getNumChannels() : 0) + " ch");
-            tr.input->set(3, 0.f);
-            session.changed(true);
+            const Clip* rc = nullptr;
+            for (auto& c : session.project.tracks.back().clips) if (c.type == ClipType::Audio) rc = &c;
+            t.check(started && rc != nullptr, "Recording creates an audio clip", err);
+            if (rc) {
+                auto smp = SampleBank::get().loadNow(rc->audio.file);
+                const double secs = smp ? smp->seconds() : 0.0;
+                t.check(smp && secs > 0.8 && secs < 1.4, "Recorded file holds ~1 s of audio", juce::String(secs, 2) + " s");
+                if (smp) {
+                    juce::AudioBuffer<float> chk(2, std::min(smp->frames(), 16384));
+                    for (int i = 0; i < chk.getNumSamples(); ++i) { chk.setSample(0, i, smp->buffer.getSample(0, i)); chk.setSample(1, i, smp->buffer.getSample(0, i)); }
+                    const double hz = pitchOf(chk, 2048, 8192, smp->sampleRate);
+                    t.check(std::fabs(hz - 220.0) < 2.0, "Recorded audio is the input signal (220 Hz)", juce::String(hz, 1) + " Hz");
+                }
+                t.check(rc->start == PPQ * 4, "Clip placed at the punch-in point (bar 2)");
+            }
+            // record again, this time with an input chain printed (designer gain module at -12 dB)
+            {
+                auto& tr = session.project.tracks.back();
+                auto fx = session.project.makeEffect("designer");
+                Catalog::applyValues(*fx.params, "s1_type=13,s1_a=25,s1_b=50,s1_c=50,s2_type=0");
+                tr.inputEffects.push_back(fx);
+                tr.input->set(3, 1.f);
+                session.changed(true);
+                engine.rebuild();
+                pump(100);
+                engine.seek(PPQ * 8);
+                const bool s3 = engine.startRecording(err);
+                pump(800);
+                engine.stopRecording();
+                pump(100);
+                const Clip* fc = nullptr;
+                for (auto& c : session.project.tracks.back().clips) if (c.type == ClipType::Audio && c.start == PPQ * 8) fc = &c;
+                auto smp = fc ? SampleBank::get().loadNow(fc->audio.file) : nullptr;
+                const float pk = smp ? smp->buffer.getMagnitude(0, std::min(smp->frames(), 24000)) : 0.f;
+                t.check(s3 && smp && smp->buffer.getNumChannels() == 2 && std::fabs(pk - 0.125f) < 0.03f, "Live recording with effects writes the processed sound (stereo, -12 dB)",
+                        juce::String(pk, 3) + " peak, " + juce::String(smp ? smp->buffer.getNumChannels() : 0) + " ch");
+                tr.input->set(3, 0.f);
+                session.changed(true);
+            }
+            session.project.tracks.back().armed = false;
+        } else {
+            t.lines.add("  SKIP  Audio recording checks: this machine's audio device has no input");
+            std::printf("  SKIP  Audio recording checks: this machine's audio device has no input\n");
         }
         // MIDI recording from live input
         session.project.tracks[1].armed = true;

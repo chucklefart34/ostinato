@@ -244,9 +244,8 @@ void ProjectStore::buildTemplate(Project& p, const juce::String& name) {
         kc.name = "Chords";
         k.clips.push_back(kc);
         p.key = 0; p.scale = 1;
-        const auto rv = addReturn("reverb", "Send (100% wet)");
-        juce::ignoreUnused(rv);
-        k.channel->set(k.channel->indexOf("send1"), -12.f);
+        k.channel->set(k.channel->indexOf("send1"), -12.f);   // before addReturn: adding a track can move `k`
+        addReturn("reverb", "Send (100% wet)");
     } else if (name == "Electronic") {
         p.tempo.front().bpm = 124.0;
         auto& d = p.addTrack(TrackType::Drum, {}, "Electro Kit");

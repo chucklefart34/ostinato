@@ -1,0 +1,98 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Self-test (renders and measures real audio)
+        run: build\Ostinato_artefacts\Release\Ostinato.exe --selftest selftest-windows.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Ostinato-Windows
+          path: |
+            build/Ostinato_artefacts/Release/Ostinato.exe
+            selftest-windows.txt
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+      - name: Build
+        run: cmake --build build --config Release -- -quiet
+      - name: Self-test
+        run: build/Ostinato_artefacts/Release/Ostinato.app/Contents/MacOS/Ostinato --selftest selftest-macos.txt
+      - name: Zip app
+        run: cd build/Ostinato_artefacts/Release && ditto -c -k --keepParent Ostinato.app Ostinato-macOS.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Ostinato-macOS
+          path: |
+            build/Ostinato_artefacts/Release/Ostinato-macOS.zip
+            selftest-macos.txt
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (iOS)
+        run: cmake -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+      - name: Build (unsigned, for device)
+        run: |
+          xcodebuild -project build-ios/Ostinato.xcodeproj -scheme Ostinato -configuration Release -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO -quiet
+      - name: Package unsigned .ipa
+        run: |
+          APP=$(find build-ios -path "*iphoneos*" -name "Ostinato.app" -type d | head -1)
+          [ -z "$APP" ] && APP=$(find build-ios -name "Ostinato.app" -type d -not -path "*simulator*" | head -1)
+          echo "App: $APP"
+          mkdir -p ipa/Payload && cp -R "$APP" ipa/Payload/
+          cd ipa && zip -qry ../Ostinato-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ostinato-iOS-unsigned-ipa
+          path: Ostinato-unsigned.ipa
+      - name: Build (simulator)
+        run: |
+          xcodebuild -project build-ios/Ostinato.xcodeproj -scheme Ostinato -configuration Debug -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO -quiet
+      # The .ipa is unsigned: sign and install it with your own Apple ID (Sideloadly or AltStore on
+      # Windows or Mac, or Xcode). See README "Install on iPhone without a Mac".
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev libfreetype-dev libfontconfig1-dev libx11-dev \
+            libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libgl1-mesa-dev xvfb
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Self-test
+        run: ./build/Ostinato_artefacts/Release/Ostinato --selftest selftest-linux.txt
+      - name: UI test (touch gestures through the real window)
+        run: xvfb-run -a ./build/Ostinato_artefacts/Release/Ostinato --uitest ui-test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Ostinato-Linux-tests
+          path: |
+            selftest-linux.txt
+            ui-test/

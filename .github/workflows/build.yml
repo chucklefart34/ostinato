@@ -23,13 +23,18 @@ jobs:
           "Exit code: $($p.ExitCode)"
           if (Test-Path selftest-windows.txt) { Get-Content selftest-windows.txt -TotalCount 1; Select-String -Path selftest-windows.txt -Pattern 'FAIL' }
           exit $p.ExitCode
+      - name: Collect
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item build\Ostinato_artefacts\Release\Ostinato.exe out\ -ErrorAction SilentlyContinue
+          Copy-Item selftest-windows.txt out\ -ErrorAction SilentlyContinue
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Ostinato-Windows
-          path: |
-            build/Ostinato_artefacts/Release/Ostinato.exe
-            selftest-windows.txt
+          path: out/
 
   macos:
     runs-on: macos-latest
@@ -106,8 +111,11 @@ jobs:
             ui-test/
 
   # Puts the newest Windows .exe, macOS app and unsigned iPhone .ipa on the repository's Releases page.
+  # Needs Settings > Actions > General > Workflow permissions = "Read and write". If that is off,
+  # this job is skipped with a warning and the builds are still downloadable from the run's page.
   publish:
     needs: [windows, macos, ios]
+    continue-on-error: true
     if: always() && github.ref == 'refs/heads/main' && needs.windows.result == 'success'
     runs-on: ubuntu-latest
     permissions:
@@ -119,7 +127,10 @@ jobs:
       - name: Package
         run: |
           ls -R dist
-          if [ -f dist/Ostinato-Windows/Ostinato.exe ]; then (cd dist/Ostinato-Windows && zip -q ../Ostinato-Windows.zip Ostinato.exe selftest-windows.txt 2>/dev/null || zip -q ../Ostinato-Windows.zip Ostinato.exe); fi
+          (cd dist/Ostinato-Windows && zip -qr ../Ostinato-Windows.zip .)
+          find dist -name "Ostinato-unsigned.ipa" -not -path "dist/Ostinato-unsigned.ipa" -exec cp {} dist/ \;
+          find dist -name "Ostinato-macOS.zip" -not -path "dist/Ostinato-macOS.zip" -exec cp {} dist/ \;
+          ls -la dist
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: latest-build
@@ -133,6 +144,6 @@ jobs:
             - **Ostinato-macOS.zip**: unzip, then right-click the app > Open the first time.
           files: |
             dist/Ostinato-Windows.zip
-            dist/Ostinato-iOS-unsigned-ipa/Ostinato-unsigned.ipa
-            dist/Ostinato-macOS/Ostinato-macOS.zip
+            dist/Ostinato-unsigned.ipa
+            dist/Ostinato-macOS.zip
           fail_on_unmatched_files: false

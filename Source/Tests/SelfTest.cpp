@@ -535,14 +535,14 @@ int runSelfTests(const juce::File& reportFile) {
         q.loopOn = true; q.loopStart = 0; q.loopEnd = PPQ * 4;
         ProcRegistry rq;
         auto sq = Compiler::compile(q, rq, SR, true);
-        Renderer r; r.prepare(SR); r.setSnapshot(sq.get()); r.play();
+        auto rOwner = std::make_unique<Renderer>(); auto& r = *rOwner;   // heap: a Renderer is ~300 KB r.prepare(SR); r.setSnapshot(sq.get()); r.play();
         juce::AudioBuffer<float> out(2, (int)(6.0 * SR)); out.clear();
         for (int pos = 0; pos < out.getNumSamples(); pos += 480) r.render(out.getWritePointer(0, pos), out.getWritePointer(1, pos), std::min(480, out.getNumSamples() - pos));
         int loops = 0;
         for (int k = 0; k < 3; ++k) { const int s = (int)(k * 2.0 * SR); if (firstAbove(out, 0.01f, std::max(0, s - 2)) - s <= 2) ++loops; }
         t.check(loops == 3, "Loop region retriggers the note every 2 s, sample-accurately", juce::String(loops) + "/3");
         // live input reaches the instrument with the transport stopped
-        Renderer live; live.prepare(SR); live.setSnapshot(sq.get());
+        auto liveOwner = std::make_unique<Renderer>(); auto& live = *liveOwner;   // heap: a Renderer is ~300 KB live.prepare(SR); live.setSnapshot(sq.get());
         live.liveQueue.push({ LiveEvent::NoteOn, Compiler::uidFor(tq.id), 60, 1.f });
         juce::AudioBuffer<float> lo(2, 9600); lo.clear();
         live.render(lo.getWritePointer(0), lo.getWritePointer(1), 9600);
@@ -989,7 +989,7 @@ int runSelfTests(const juce::File& reportFile) {
             tr->input->resetToDefaults();
             Catalog::applyValues(*tr->input, inputValues);
             auto snap = Compiler::compile(p, reg, SR, true);
-            Renderer r; r.prepare(SR); r.setSnapshot(snap.get());
+            auto rOwner = std::make_unique<Renderer>(); auto& r = *rOwner;   // heap: a Renderer is ~300 KB r.prepare(SR); r.setSnapshot(snap.get());
             r.idleSleepEnabled = false;
             Result res; res.out.setSize(2, N); res.out.clear(); res.rec.setSize(2, N); res.rec.clear();
             int recPos = 0;
@@ -1167,7 +1167,7 @@ int runSelfTests(const juce::File& reportFile) {
         // worst-case single block cost for a 256-sample buffer
         ProcRegistry reg;
         auto snap = Compiler::compile(p, reg, SR, true);
-        Renderer r; r.prepare(SR); r.setSnapshot(snap.get()); r.play();
+        auto rOwner = std::make_unique<Renderer>(); auto& r = *rOwner;   // heap: a Renderer is ~300 KB r.prepare(SR); r.setSnapshot(snap.get()); r.play();
         float L[256], R[256];
         double worst = 0;
         for (int i = 0; i < 2000; ++i) { const auto a = juce::Time::getMillisecondCounterHiRes(); r.render(L, R, 256); worst = std::max(worst, juce::Time::getMillisecondCounterHiRes() - a); }

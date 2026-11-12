@@ -1,7 +1,7 @@
 // Apple-only services: AAC encoding (ExtAudioFile) and haptic feedback (UIKit).
 // NOTE: this file is compiled only on macOS/iOS and could not be built on the Linux
 // machine used for development; it uses only long-stable Apple APIs.
-#include "Engine/Exporter.h"
+#include "Platform/PlatformAudio.h"   // not Exporter.h: the project's Marker type clashes with CarbonCore's
 #include <AudioToolbox/AudioToolbox.h>
 #if JUCE_IOS
  #import <UIKit/UIKit.h>

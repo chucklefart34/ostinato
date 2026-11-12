@@ -52,8 +52,4 @@ private:
 };
 
 // Platform encoders (Platform/*.mm). Return false with an error when unavailable.
-namespace PlatformAudio {
-bool encodeAAC(const juce::AudioBuffer<float>& audio, double sampleRate, int kbps, const juce::File& out, juce::String& error);
-void haptic(int strength);   // 0 light, 1 medium, 2 heavy; no-op where unsupported
-bool hapticsAvailable();
-}
+#include "Platform/PlatformAudio.h"

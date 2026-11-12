@@ -77,14 +77,14 @@ change them any time) or **with effects** (a stereo file with the chain printed 
 You need CMake 3.22+. The first configure downloads JUCE 9.0.5 automatically
 (or pass `-DJUCE_DIR=/path/to/JUCE`).
 
-**Windows (PC), easiest:** install Visual Studio 2022 Community with "Desktop development with C++",
+**Windows (PC), easiest:** install Visual Studio Community (2022 or newer) with "Desktop development with C++",
 then double-click `build-windows.bat`. It produces `Ostinato.exe` next to it (first build takes 5-15 minutes).
 
 **Windows (PC), manual.** Install [Visual Studio 2022](https://visualstudio.microsoft.com/) with the
 "Desktop development with C++" workload (it includes CMake). Then, in a Developer PowerShell:
 
 ```
-cmake -B build -G "Visual Studio 17 2022" -A x64
+cmake -B build -A x64
 cmake --build build --config Release
 build\Ostinato_artefacts\Release\Ostinato.exe
 ```

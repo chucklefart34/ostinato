@@ -1,18 +1,19 @@
 @echo off
-rem One-click Windows build. Needs Visual Studio 2022 with "Desktop development with C++"
+rem One-click Windows build. Needs Visual Studio 2022 or newer with "Desktop development with C++"
 rem (free Community edition is fine) and an internet connection the first time (downloads JUCE).
 setlocal
 where cmake >nul 2>nul
 if errorlevel 1 (
-  if exist "%ProgramFiles%\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" (
-    set "PATH=%ProgramFiles%\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;%PATH%"
+  for /d %%V in ("%ProgramFiles%\Microsoft Visual Studio\*") do for /d %%E in ("%%V\*") do if exist "%%E\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" set "VSCMAKE=%%E\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
+  if defined VSCMAKE (
+    set "PATH=%VSCMAKE%;%PATH%"
   ) else (
-    echo CMake was not found. Install Visual Studio 2022 Community with "Desktop development with C++".
+    echo CMake was not found. Install Visual Studio Community with "Desktop development with C++".
     pause
     exit /b 1
   )
 )
-cmake -B build -G "Visual Studio 17 2022" -A x64 || goto :fail
+cmake -B build -A x64 || goto :fail
 cmake --build build --config Release --parallel || goto :fail
 copy /y build\Ostinato_artefacts\Release\Ostinato.exe Ostinato.exe >nul
 echo.

@@ -1094,6 +1094,7 @@ int runSelfTests(const juce::File& reportFile) {
         // Audio recording needs an input. Machines with a real output device but no input (CI Macs)
         // cannot feed the simulated signal, so those checks are skipped there, not failed.
         const bool haveInput = engine.inputEnabled();
+        juce::String err;
         if (haveInput) {
             auto& at = session.project.tracks.back();
             at.armed = true;
@@ -1101,7 +1102,6 @@ int runSelfTests(const juce::File& reportFile) {
             engine.rebuild();
             pump(100);
             engine.seek(PPQ * 4);
-            juce::String err;
             const bool started = engine.startRecording(err);
             pump(1000);
             engine.stopRecording();

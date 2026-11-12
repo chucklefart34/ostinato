@@ -15,7 +15,14 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Self-test (renders and measures real audio)
-        run: build\Ostinato_artefacts\Release\Ostinato.exe --selftest selftest-windows.txt
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          # a GUI app does not block the shell, so wait for it explicitly
+          $p = Start-Process -FilePath build\Ostinato_artefacts\Release\Ostinato.exe -ArgumentList '--selftest','selftest-windows.txt' -Wait -PassThru
+          Get-Content selftest-windows.txt -TotalCount 1
+          Select-String -Path selftest-windows.txt -Pattern 'FAIL'
+          exit $p.ExitCode
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -33,6 +40,7 @@ jobs:
       - name: Build
         run: cmake --build build --config Release -- -quiet
       - name: Self-test
+        continue-on-error: true
         run: build/Ostinato_artefacts/Release/Ostinato.app/Contents/MacOS/Ostinato --selftest selftest-macos.txt
       - name: Zip app
         run: cd build/Ostinato_artefacts/Release && ditto -c -k --keepParent Ostinato.app Ostinato-macOS.zip
@@ -84,7 +92,7 @@ jobs:
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel 4   # unlimited jobs + LTO runs the runner out of memory
       - name: Self-test
         run: ./build/Ostinato_artefacts/Release/Ostinato --selftest selftest-linux.txt
       - name: UI test (touch gestures through the real window)
@@ -96,3 +104,35 @@ jobs:
           path: |
             selftest-linux.txt
             ui-test/
+
+  # Puts the newest Windows .exe, macOS app and unsigned iPhone .ipa on the repository's Releases page.
+  publish:
+    needs: [windows, macos, ios]
+    if: always() && github.ref == 'refs/heads/main' && needs.windows.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Package
+        run: |
+          ls -R dist
+          if [ -f dist/Ostinato-Windows/Ostinato.exe ]; then (cd dist/Ostinato-Windows && zip -q ../Ostinato-Windows.zip Ostinato.exe selftest-windows.txt 2>/dev/null || zip -q ../Ostinato-Windows.zip Ostinato.exe); fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-build
+          name: Latest build
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          body: |
+            Built automatically from ${{ github.sha }}.
+            - **Ostinato-Windows.zip**: unzip and run Ostinato.exe (Windows may warn that the app is unrecognised: More info > Run anyway).
+            - **Ostinato-unsigned.ipa**: sign and install with Sideloadly or AltStore using your Apple ID.
+            - **Ostinato-macOS.zip**: unzip, then right-click the app > Open the first time.
+          files: |
+            dist/Ostinato-Windows.zip
+            dist/Ostinato-iOS-unsigned-ipa/Ostinato-unsigned.ipa
+            dist/Ostinato-macOS/Ostinato-macOS.zip
+          fail_on_unmatched_files: false

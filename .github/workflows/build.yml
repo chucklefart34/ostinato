@@ -21,7 +21,7 @@ jobs:
           # a GUI app does not block the shell, so wait for it explicitly
           $p = Start-Process -FilePath build\Ostinato_artefacts\Release\Ostinato.exe -ArgumentList '--selftest','selftest-windows.txt' -Wait -PassThru
           "Exit code: $($p.ExitCode)"
-          if (Test-Path selftest-windows.txt) { Get-Content selftest-windows.txt -TotalCount 1; Select-String -Path selftest-windows.txt -Pattern 'FAIL' }
+          if (Test-Path selftest-windows.txt) { if ($p.ExitCode -eq 0) { Get-Content selftest-windows.txt -TotalCount 1 } else { Get-Content selftest-windows.txt | Select-Object -Last 25 }; Select-String -Path selftest-windows.txt -Pattern 'FAIL' }
           exit $p.ExitCode
       - name: Collect
         if: always()

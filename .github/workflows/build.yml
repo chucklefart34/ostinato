@@ -20,8 +20,8 @@ jobs:
         run: |
           # a GUI app does not block the shell, so wait for it explicitly
           $p = Start-Process -FilePath build\Ostinato_artefacts\Release\Ostinato.exe -ArgumentList '--selftest','selftest-windows.txt' -Wait -PassThru
-          Get-Content selftest-windows.txt -TotalCount 1
-          Select-String -Path selftest-windows.txt -Pattern 'FAIL'
+          "Exit code: $($p.ExitCode)"
+          if (Test-Path selftest-windows.txt) { Get-Content selftest-windows.txt -TotalCount 1; Select-String -Path selftest-windows.txt -Pattern 'FAIL' }
           exit $p.ExitCode
       - uses: actions/upload-artifact@v4
         if: always()

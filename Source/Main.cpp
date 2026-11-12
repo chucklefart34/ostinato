@@ -18,18 +18,20 @@ public:
     void initialise(const juce::String& cmd) override {
         auto args = juce::StringArray::fromTokens(cmd, true);
         auto argAfter = [&args](const char* flag) { const int i = args.indexOf(flag); return i >= 0 && i + 1 < args.size() ? args[i + 1].unquoted() : juce::String(); };
+        // relative paths are relative to the current folder (juce::File needs absolute paths)
+        auto fileAfter = [&argAfter](const char* flag) { const auto a = argAfter(flag); return a.isEmpty() ? juce::File() : juce::File::getCurrentWorkingDirectory().getChildFile(a); };
         if (args.contains("--selftest")) {
-            setApplicationReturnValue(runSelfTests(argAfter("--selftest").isNotEmpty() ? juce::File(argAfter("--selftest")) : juce::File()));
+            setApplicationReturnValue(runSelfTests(fileAfter("--selftest")));
             quit();
             return;
         }
         if (args.contains("--uitest")) {
-            setApplicationReturnValue(runUITest(juce::File(argAfter("--uitest"))));
+            setApplicationReturnValue(runUITest(fileAfter("--uitest")));
             quit();
             return;
         }
         if (args.contains("--screenshots")) {
-            setApplicationReturnValue(runScreenshots(juce::File(argAfter("--screenshots"))));
+            setApplicationReturnValue(runScreenshots(fileAfter("--screenshots")));
             quit();
             return;
         }

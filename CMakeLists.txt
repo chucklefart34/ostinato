@@ -72,6 +72,12 @@ if(OSTINATO_HEADLESS_LINUX)
         JUCE_USE_XRANDR=0 JUCE_USE_XINERAMA=0 JUCE_USE_XCURSOR=0 JUCE_USE_XINPUT=0)
 endif()
 
+# Windows gives the main thread 1 MB of stack by default (macOS/Linux: 8 MB). Match the others so the
+# large self-test function and deep UI call chains have the same headroom on every platform.
+if(MSVC)
+    target_link_options(Ostinato PRIVATE /STACK:8388608)
+endif()
+
 target_link_libraries(Ostinato
     PRIVATE
         OstinatoData
